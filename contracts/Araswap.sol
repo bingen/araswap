@@ -3,12 +3,12 @@ pragma solidity ^0.4.24;
 import "@aragon/os/contracts/apps/AragonApp.sol";
 import "@aragon/os/contracts/lib/math/SafeMath.sol";
 import "@aragon/os/contracts/lib/token/ERC20.sol";
+import "@aragon/apps-token-manager/contracts/TokenManager.sol";
 
 
 contract Araswap is AragonApp {
     using SafeMath for uint256;
 
-    uint256 private constant FEE_PCT = 997000;
     uint256 private constant BASE_PCT = 1000000;
 
     /// Events
@@ -19,16 +19,21 @@ contract Araswap is AragonApp {
 
     /// State
     ERC20 public token;
-    uint256 public _totalSupply;
-    mapping(address => uint256) public _balances;
+    TokenManager public liquidityTokenManager;
+    uint256 public feePct; // ppm of tokens minus fee
 
     /// ACL
-    // TODO
+    bytes32 constant public CHANGE_FEES_ROLE = keccak256("CHANGE_FEES_ROLE");
 
-    function initialize(ERC20 _token) public onlyInit {
+    function initialize(ERC20 _token, TokenManager _liquidityTokenManager, uint256 _feePct) public onlyInit {
         initialized();
 
+        require(isContract(_token));
+        require(isContract(_liquidityTokenManager));
+
         token = _token;
+        liquidityTokenManager = _liquidityTokenManager;
+        _setFeePct(_feePct);
     }
 
     /**
@@ -73,7 +78,7 @@ contract Araswap is AragonApp {
      */
     function addLiquidity(uint256 min_liquidity, uint256 max_tokens, uint256 deadline) external payable onlyInit returns (uint256) {
         require(deadline > block.timestamp && max_tokens > 0 && msg.value > 0, "addLiquidity: INVALID_ARGUMENT");
-        uint256 total_liquidity = _totalSupply;
+        uint256 total_liquidity = liquidityTokenManager.token().totalSupply();
 
         uint256 token_amount;
         if (total_liquidity > 0) {
@@ -84,8 +89,8 @@ contract Araswap is AragonApp {
             uint256 liquidity_minted = msg.value.mul(total_liquidity) / eth_reserve;
             require(max_tokens >= token_amount && liquidity_minted >= min_liquidity);
 
-            _balances[msg.sender] = _balances[msg.sender].add(liquidity_minted);
-            _totalSupply = total_liquidity.add(liquidity_minted);
+            // mint new liqudity tokens
+            liquidityTokenManager.mint(msg.sender, initial_liquidity);
 
             require(token.transferFrom(msg.sender, address(this), token_amount));
 
@@ -97,8 +102,8 @@ contract Araswap is AragonApp {
 
             token_amount = max_tokens;
             uint256 initial_liquidity = address(this).balance;
-            _totalSupply = initial_liquidity;
-            _balances[msg.sender] = initial_liquidity;
+            // mint new liqudity tokens
+            liquidityTokenManager.mint(msg.sender, initial_liquidity);
 
             require(token.transferFrom(msg.sender, address(this), token_amount));
 
@@ -119,7 +124,7 @@ contract Araswap is AragonApp {
     function removeLiquidity(uint256 amount, uint256 min_eth, uint256 min_tokens, uint256 deadline) external returns (uint256, uint256) {
         require(amount > 0 && deadline > block.timestamp && min_eth > 0 && min_tokens > 0);
 
-        uint256 total_liquidity = _totalSupply;
+        uint256 total_liquidity = liquidityTokenManager.token().totalSupply();
         require(total_liquidity > 0);
 
         uint256 token_reserve = token.balanceOf(address(this));
@@ -127,8 +132,8 @@ contract Araswap is AragonApp {
         uint256 token_amount = amount.mul(token_reserve) / total_liquidity;
         require(eth_amount >= min_eth && token_amount >= min_tokens);
 
-        _balances[msg.sender] = _balances[msg.sender].sub(amount);
-        _totalSupply = total_liquidity.sub(amount);
+        // burn liqudity tokens
+        liquidityTokenManager.burn(msg.sender, amount);
 
         msg.sender.transfer(eth_amount);
         require(token.transfer(msg.sender, token_amount));
@@ -161,6 +166,10 @@ contract Araswap is AragonApp {
         return eth_bought;
     }
 
+    function setFeePct(uint256 _feePct) external auth(CHANGE_FEES_ROLE) {
+        _setFeePct(_feePct);
+    }
+
     function _ethToTokenInput(uint256 eth_sold, uint256 min_tokens, uint256 deadline, address buyer, address recipient) private returns (uint256) {
         require(deadline >= block.timestamp && eth_sold > 0 && min_tokens > 0);
 
@@ -191,6 +200,11 @@ contract Araswap is AragonApp {
         return eth_bought;
     }
 
+    function _setFeePct(uint256 _feePct) internal {
+        require(_feePct > 0, "INVALID_FEE_PCT");
+        feePct = _feePct;
+    }
+
     /**
      * @dev Pricing function for converting between ETH && Tokens.
      * @param input_amount Amount of ETH or Tokens being sold.
@@ -198,10 +212,10 @@ contract Araswap is AragonApp {
      * @param output_reserve Amount of ETH or Tokens (output type) in exchange reserves.
      * @return Amount of ETH or Tokens bought.
      */
-    function _getInputPrice(uint256 input_amount, uint256 input_reserve, uint256 output_reserve) private pure returns (uint256) {
+    function _getInputPrice(uint256 input_amount, uint256 input_reserve, uint256 output_reserve) internal view returns (uint256) {
         require(input_reserve > 0 && output_reserve > 0, "INVALID_VALUE");
 
-        uint256 input_amount_with_fee = input_amount.mul(FEE_PCT);
+        uint256 input_amount_with_fee = input_amount.mul(feePct);
         uint256 numerator = input_amount_with_fee.mul(output_reserve);
         uint256 denominator = input_reserve.mul(BASE_PCT).add(input_amount_with_fee);
 
