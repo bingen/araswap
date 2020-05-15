@@ -92,8 +92,8 @@ module.exports = {
 }
 
 async function transferTokens(accounts, minime, log) {
-  const amount = pct16(10000)
-  for (let index = 1; index < 4; index++) {
+  const amount = pct16(100000)
+  for (let index = 0; index < 3; index++) {
     await minime.generateTokens(accounts[index], amount)
     log(`> Mint ${amount} tokens to ${accounts[index]}`)
   }
