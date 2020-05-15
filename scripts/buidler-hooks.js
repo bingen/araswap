@@ -38,7 +38,6 @@ module.exports = {
     const minimeSymbol = 'AST'
     minime = await deployMinimeToken(artifacts, 'Araswap Token', minimeSymbol)
     log(`> Minime token ${minimeSymbol} deployed: ${minime.address}`)
-    await transferTokens(accounts, minime, 1, log)
 
     // Deploy a minime token to be exchanged an generate tokens for test accounts
     const antSymbol = 'ANT'
@@ -79,6 +78,8 @@ module.exports = {
   getInitParams: async ({ log }, { web3, artifacts }) => {
     return [
       ant.address,
+      tokens.address,
+      bigExp(3, 15), // fee 0.3%
     ]
   },
 
@@ -93,8 +94,11 @@ module.exports = {
     // approve unlimited tokens to the proxy app
     await approveTokens(accounts, ant, INITIAL_ANT_TOKENS, proxy)
 
-    await tokens.createPermission('MINT_ROLE', voting.address)
-    await tokens.createPermission('BURN_ROLE', voting.address)
+    await tokens.createPermission('MINT_ROLE', proxy.address)
+    await tokens.createPermission('BURN_ROLE', proxy.address)
+
+    // TODO: missing in buidler plugin
+    //await proxy.createPermission('CHANGE_FEES_ROLE', voting.address)
 
     // set dao permissions to Voting
     await switchRootDaoPermissions(proxy, artifacts, web3)
