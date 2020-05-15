@@ -11,9 +11,14 @@
  * https://github.com/aragon/buidler-aragon/blob/develop/src/types.ts#L31
  */
 
-let minime, tokens, bigExp
+let minime, ant, tokens, voting
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
+const bigExp = (x, y) =>
+  web3.utils.toBN(x).mul(web3.utils.toBN(10).pow(web3.utils.toBN(y)))
+const pct16 = (x) => bigExp(x, 16)
+const decimals18 = (x) => bigExp(x, 18)
 
 module.exports = {
   // Called before a dao is deployed.
@@ -24,18 +29,21 @@ module.exports = {
     { dao, _experimentalAppInstaller, log },
     { web3, artifacts }
   ) => {
-    bigExp = (x, y) =>
-      web3.utils.toBN(x).mul(web3.utils.toBN(10).pow(web3.utils.toBN(y)))
-    pct16 = (x) => bigExp(x, 16)
 
     // Retrieve accounts.
     const accounts = await web3.eth.getAccounts()
 
-    // Deploy a minime token an generate tokens for test accounts
-    minime = await deployMinimeToken(artifacts)
-    await transferTokens(accounts, minime, log)
+    // Deploy a minime token for the Token Manager an generate tokens for test accounts
+    const minimeSymbol = 'AST'
+    minime = await deployMinimeToken(artifacts, 'Araswap Token', minimeSymbol)
+    log(`> Minime token ${minimeSymbol} deployed: ${minime.address}`)
+    await transferTokens(accounts, minime, 1, log)
 
-    log(`> Minime token deployed: ${minime.address}`)
+    // Deploy a minime token to be exchanged an generate tokens for test accounts
+    const antSymbol = 'ANT'
+    ant = await deployMinimeToken(artifacts, 'ANT Test Token', antSymbol)
+    log(`> Minime token ${antSymbol} deployed: ${ant.address}`)
+    await transferTokens(accounts, ant, 1000, log)
 
     tokens = await _experimentalAppInstaller('token-manager', {
       skipInitialize: true,
@@ -46,7 +54,7 @@ module.exports = {
     await tokens.initialize([minime.address, true, 0])
     log(`> Tokens app installed: ${tokens.address}`)
 
-    const voting = await _experimentalAppInstaller('voting', {
+    voting = await _experimentalAppInstaller('voting', {
       initializeArgs: [
         tokens.address,
         pct16(50), // support 50%
@@ -69,9 +77,7 @@ module.exports = {
   // Must return an array with the proxy's init parameters.
   getInitParams: async ({ log }, { web3, artifacts }) => {
     return [
-      minime.address,
-      tokens.address,
-      bigExp(3, 15), // fee 0.3%
+      ant.address,
     ]
   },
 
@@ -80,41 +86,74 @@ module.exports = {
     { proxy, _experimentalAppInstaller, log },
     { web3, artifacts }
   ) => {
-    // approve unlimited tokens to the proxy app
-    await approveTokens(minime, proxy)
+    await tokens.createPermission('MINT_ROLE', voting.address)
+    await tokens.createPermission('BURN_ROLE', voting.address)
 
-    await tokens.createPermission('MINT_ROLE', proxy.address)
-    await tokens.createPermission('BURN_ROLE', proxy.address)
+    // set dao permissions to Voting
+    await switchRootDaoPermissions(proxy, artifacts, web3)
   },
 
   // Called after the app's proxy is updated with a new implementation.
   postUpdate: async ({ proxy, log }, { web3, artifacts }) => {},
 }
 
-async function transferTokens(accounts, minime, log) {
-  const amount = pct16(100000)
+async function transferTokens(accounts, minime, tokenAmount, log) {
+  const amount = decimals18(tokenAmount)
   for (let index = 0; index < 3; index++) {
     await minime.generateTokens(accounts[index], amount)
     log(`> Mint ${amount} tokens to ${accounts[index]}`)
   }
 }
 
-async function approveTokens(minime, proxy) {
-  for (let index = 1; index < 4; index++) {
-    await minime.approve(proxy.address, 0)
-  }
-}
-
-async function deployMinimeToken(artifacts) {
+async function deployMinimeToken(artifacts, name, symbol) {
   const MiniMeToken = await artifacts.require('MiniMeToken')
   const token = await MiniMeToken.new(
     ZERO_ADDRESS,
     ZERO_ADDRESS,
     0,
-    'ANT Test Token',
+    name,
     18,
-    'ANT',
+    symbol,
     true
   )
   return token
+}
+
+// TODO: buidler-plugin helpers?
+async function getKernel(proxy, artifacts) {
+  const kernelAddress = await proxy.kernel()
+  const Kernel = await artifacts.require('Kernel')
+  const kernel = await Kernel.at(kernelAddress)
+
+  return kernel
+}
+
+async function getAcl(dao, artifacts) {
+  const aclAddress = await dao.acl()
+  const ACL = await artifacts.require('ACL')
+  const acl = await ACL.at(aclAddress)
+
+  return acl
+}
+
+async function switchRole(acl, from, to, app, role) {
+  await acl.grantPermission(to, app, role)
+  await acl.revokePermission(from, app, role)
+  await acl.setPermissionManager(to, app, role)
+}
+
+async function switchRootDaoPermissions(proxy, artifacts, web3) {
+  const accounts = await web3.eth.getAccounts()
+  const rootAccount = accounts[0]
+
+  const dao = await getKernel(proxy, artifacts)
+  const acl = await getAcl(dao, artifacts)
+
+  const appManagerRole = await dao.APP_MANAGER_ROLE()
+  const createPermissionsRole = await acl.CREATE_PERMISSIONS_ROLE()
+
+  await switchRole(acl, rootAccount, voting.address, dao.address, appManagerRole)
+  // TODO!!
+  // setAllPermissionsOpenly runs after postInit and fails after this:
+  //await switchRole(acl, rootAccount, voting.address, acl.address, createPermissionsRole)
 }

@@ -1,7 +1,7 @@
 {
-  "name": "araswap-20",
+  "name": "araswap",
   "version": "0.0.1",
-  "description": "placeholder-app-description",
+  "description": "Simple Aragon app for swapping tokens and ETH",
   "scripts": {
     "postinstall": "yarn compile && yarn build-app",
     "build-app": "cd app && npm install && cd ..",
