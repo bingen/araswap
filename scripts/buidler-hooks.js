@@ -11,6 +11,10 @@
  * https://github.com/aragon/buidler-aragon/blob/develop/src/types.ts#L31
  */
 
+let minime, tokens, bigExp
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
 module.exports = {
   // Called before a dao is deployed.
   preDao: async ({ log }, { web3, artifacts }) => {},
@@ -19,7 +23,41 @@ module.exports = {
   postDao: async (
     { dao, _experimentalAppInstaller, log },
     { web3, artifacts }
-  ) => {},
+  ) => {
+    bigExp = (x, y) =>
+      web3.utils.toBN(x).mul(web3.utils.toBN(10).pow(web3.utils.toBN(y)))
+    pct16 = (x) => bigExp(x, 16)
+
+    // Retrieve accounts.
+    const accounts = await web3.eth.getAccounts()
+
+    // Deploy a minime token an generate tokens for test accounts
+    minime = await deployMinimeToken(artifacts)
+    await transferTokens(accounts, minime, log)
+
+    log(`> Minime token deployed: ${minime.address}`)
+
+    tokens = await _experimentalAppInstaller('token-manager', {
+      skipInitialize: true,
+    })
+
+    await minime.changeController(tokens.address)
+    log(`> Change minime controller to tokens app`)
+    await tokens.initialize([minime.address, true, 0])
+    log(`> Tokens app installed: ${tokens.address}`)
+
+    const voting = await _experimentalAppInstaller('voting', {
+      initializeArgs: [
+        tokens.address,
+        pct16(50), // support 50%
+        pct16(25), // quorum 15%
+        604800, // 7 days
+      ],
+    })
+    log(`> Voting app installed: ${voting.address}`)
+
+    await voting.createPermission('CREATE_VOTES_ROLE', tokens.address)
+  },
 
   // Called after the app's proxy is created, but before it's initialized.
   preInit: async (
@@ -27,18 +65,56 @@ module.exports = {
     { web3, artifacts }
   ) => {},
 
+  // Called when the start task needs to know the app proxy's init parameters.
+  // Must return an array with the proxy's init parameters.
+  getInitParams: async ({ log }, { web3, artifacts }) => {
+    return [
+      minime.address,
+      tokens.address,
+      bigExp(3, 15), // fee 0.3%
+    ]
+  },
+
   // Called after the app's proxy is initialized.
   postInit: async (
     { proxy, _experimentalAppInstaller, log },
     { web3, artifacts }
-  ) => {},
+  ) => {
+    // approve unlimited tokens to the proxy app
+    await approveTokens(minime, proxy)
 
-  // Called when the start task needs to know the app proxy's init parameters.
-  // Must return an array with the proxy's init parameters.
-  getInitParams: async ({ log }, { web3, artifacts }) => {
-    return [42]
+    await tokens.createPermission('MINT_ROLE', proxy.address)
+    await tokens.createPermission('BURN_ROLE', proxy.address)
   },
 
   // Called after the app's proxy is updated with a new implementation.
   postUpdate: async ({ proxy, log }, { web3, artifacts }) => {},
+}
+
+async function transferTokens(accounts, minime, log) {
+  const amount = pct16(10000)
+  for (let index = 1; index < 4; index++) {
+    await minime.generateTokens(accounts[index], amount)
+    log(`> Mint ${amount} tokens to ${accounts[index]}`)
+  }
+}
+
+async function approveTokens(minime, proxy) {
+  for (let index = 1; index < 4; index++) {
+    await minime.approve(proxy.address, 0)
+  }
+}
+
+async function deployMinimeToken(artifacts) {
+  const MiniMeToken = await artifacts.require('MiniMeToken')
+  const token = await MiniMeToken.new(
+    ZERO_ADDRESS,
+    ZERO_ADDRESS,
+    0,
+    'ANT Test Token',
+    18,
+    'ANT',
+    true
+  )
+  return token
 }
