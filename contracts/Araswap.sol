@@ -37,7 +37,7 @@ contract Araswap is AragonApp {
      * @dev User specifies exact input (msg.value).
      * @dev User cannot specify minimum output or deadline.
      */
-    function () external payable onlyInit {
+    function () external payable isInitialized {
         _ethToTokenInput(msg.value, 1, block.timestamp, msg.sender, msg.sender);
     }
 
@@ -48,7 +48,7 @@ contract Araswap is AragonApp {
      * @param deadline Time after which this transaction can no longer be executed.
      * @return Amount of Tokens bought.
      */
-    function ethToTokenSwapInput(uint256 min_tokens, uint256 deadline) external payable onlyInit returns (uint256) {
+    function ethToTokenSwapInput(uint256 min_tokens, uint256 deadline) external payable isInitialized returns (uint256) {
         return _ethToTokenInput(msg.value, min_tokens, deadline, msg.sender, msg.sender);
     }
 
@@ -60,7 +60,7 @@ contract Araswap is AragonApp {
      * @param deadline Time after which this transaction can no longer be executed.
      * @return Amount of ETH bought.
      */
-    function tokenToEthSwapInput(uint256 tokens_sold, uint256 min_eth, uint256 deadline) external onlyInit returns (uint256) {
+    function tokenToEthSwapInput(uint256 tokens_sold, uint256 min_eth, uint256 deadline) external isInitialized returns (uint256) {
         return _tokenToEthInput(tokens_sold, min_eth, deadline, msg.sender, msg.sender);
     }
 
@@ -72,7 +72,7 @@ contract Araswap is AragonApp {
      * @param deadline Time after which this transaction can no longer be executed.
      * @return The amount of UNI minted.
      */
-    function addLiquidity(uint256 min_liquidity, uint256 max_tokens, uint256 deadline) external payable onlyInit returns (uint256) {
+    function addLiquidity(uint256 min_liquidity, uint256 max_tokens, uint256 deadline) external payable isInitialized returns (uint256) {
         require(deadline > block.timestamp && max_tokens > 0 && msg.value > 0, "addLiquidity: INVALID_ARGUMENT");
         uint256 total_liquidity = _totalSupply;
 
@@ -155,7 +155,7 @@ contract Araswap is AragonApp {
      * @param tokens_sold Amount of Tokens sold.
      * @return Amount of ETH that can be bought with input Tokens.
      */
-    function getTokenToEthInputPrice(uint256 tokens_sold) external view onlyInit returns (uint256) {
+    function getTokenToEthInputPrice(uint256 tokens_sold) external view isInitialized returns (uint256) {
         require(tokens_sold > 0);
         uint256 token_reserve = token.balanceOf(address(this));
         uint256 eth_bought = _getInputPrice(tokens_sold, token_reserve, address(this).balance);
