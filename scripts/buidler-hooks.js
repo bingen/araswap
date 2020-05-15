@@ -14,6 +14,7 @@
 let minime, ant, tokens, voting
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+const INITIAL_ANT_TOKENS = 1000
 
 const bigExp = (x, y) =>
   web3.utils.toBN(x).mul(web3.utils.toBN(10).pow(web3.utils.toBN(y)))
@@ -43,7 +44,7 @@ module.exports = {
     const antSymbol = 'ANT'
     ant = await deployMinimeToken(artifacts, 'ANT Test Token', antSymbol)
     log(`> Minime token ${antSymbol} deployed: ${ant.address}`)
-    await transferTokens(accounts, ant, 1000, log)
+    await transferTokens(accounts, ant, INITIAL_ANT_TOKENS, log)
 
     tokens = await _experimentalAppInstaller('token-manager', {
       skipInitialize: true,
@@ -86,6 +87,12 @@ module.exports = {
     { proxy, _experimentalAppInstaller, log },
     { web3, artifacts }
   ) => {
+    // Retrieve accounts.
+    const accounts = await web3.eth.getAccounts()
+
+    // approve unlimited tokens to the proxy app
+    await approveTokens(accounts, ant, INITIAL_ANT_TOKENS, proxy)
+
     await tokens.createPermission('MINT_ROLE', voting.address)
     await tokens.createPermission('BURN_ROLE', voting.address)
 
@@ -99,9 +106,18 @@ module.exports = {
 
 async function transferTokens(accounts, minime, tokenAmount, log) {
   const amount = decimals18(tokenAmount)
+
   for (let index = 0; index < 3; index++) {
     await minime.generateTokens(accounts[index], amount)
     log(`> Mint ${amount} tokens to ${accounts[index]}`)
+  }
+}
+
+async function approveTokens(accounts, minime, tokenAmount, proxy) {
+  const amount = decimals18(tokenAmount)
+
+  for (let index = 0; index < 3; index++) {
+    await minime.approve(proxy.address, amount, { from: accounts[index] })
   }
 }
 
