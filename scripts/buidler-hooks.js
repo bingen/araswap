@@ -57,7 +57,7 @@ module.exports = {
 
     voting = await _experimentalAppInstaller('voting', {
       initializeArgs: [
-        tokens.address,
+        minime.address,
         pct16(50), // support 50%
         pct16(25), // quorum 15%
         604800, // 7 days
