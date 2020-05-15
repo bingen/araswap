@@ -8,7 +8,7 @@ import "@aragon/os/contracts/lib/token/ERC20.sol";
 contract Araswap is AragonApp {
     using SafeMath for uint256;
 
-    uint256 private constant FEE_PCT = 997000;
+    uint256 private constant FEE_PCT = 3000;
     uint256 private constant BASE_PCT = 1000000;
 
     /// Events
@@ -202,9 +202,9 @@ contract Araswap is AragonApp {
     function _getInputPrice(uint256 input_amount, uint256 input_reserve, uint256 output_reserve) private pure returns (uint256) {
         require(input_reserve > 0 && output_reserve > 0, "INVALID_VALUE");
 
-        uint256 input_amount_with_fee = input_amount.mul(FEE_PCT);
-        uint256 numerator = input_amount_with_fee.mul(output_reserve);
-        uint256 denominator = input_reserve.mul(BASE_PCT).add(input_amount_with_fee);
+        uint256 input_amount_minus_fee = input_amount.mul(BASE_PCT - FEE_PCT);
+        uint256 numerator = input_amount_minus_fee.mul(output_reserve);
+        uint256 denominator = input_reserve.mul(BASE_PCT).add(input_amount_minus_fee);
 
         return numerator / denominator;
     }
