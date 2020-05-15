@@ -28,7 +28,7 @@ module.exports = {
     clientServePort: 3000,
     appSrcPath: 'app/',
     appBuildOutputPath: 'dist/',
-    appName: 'araswap-20',
+    appName: 'araswap',
     hooks, // Path to script hooks
   },
 }

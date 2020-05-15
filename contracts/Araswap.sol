@@ -24,6 +24,7 @@ contract Araswap is AragonApp {
 
     /// ACL
     // TODO
+    bytes32 constant public CHANGE_FEES_ROLE = keccak256("CHANGE_FEES_ROLE");
 
     function initialize(ERC20 _token) public onlyInit {
         initialized();
